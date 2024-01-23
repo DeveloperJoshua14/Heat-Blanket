@@ -74,6 +74,9 @@ int RightTimeCounter = 2;
 int LeftTimeSave = 0;
 int RightTimeSave = 0;
 
+int keepTimeLeft = 0;
+int keepTimeRight = 0;
+
 unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE (50)
 char msg[MSG_BUFFER_SIZE];
@@ -274,7 +277,7 @@ void powerFunction(
   Servo &ServoPW,Servo &ServoTemp,Servo &ServoTime,
   bool Power_State,int Time_State,int Temp_State,
   bool Power_New,int Time_New,int Temp_New,
-  bool updated,int Done,int TimeCounter,int TimeSave, int choose
+  bool updated,int Done,int TimeCounter,int TimeSave, int choose, int keepTime
   ){
   
   // Serial.print("Power_State1: ");
@@ -284,10 +287,11 @@ void powerFunction(
 
   if(updated){
     if(Power_State != Power_New){
+      // Serial.println("Moved Power");
       servoClick(ServoPW);
       Power_State = Power_New;
       Done++;
-      Serial.println("Here - - -");
+      // Serial.println("Here - - -");
     
     }else if(Done == 0){
       Done++;
@@ -298,6 +302,7 @@ void powerFunction(
     // Serial.println(Power_New);
     if(Temp_State != Temp_New){
       servoClick(ServoTemp);
+      // Serial.println("Moved Temp");
       Temp_State++;
       if(Temp_State == 11){
         Temp_State = 1;
@@ -309,45 +314,72 @@ void powerFunction(
       Done++;
     }
 
+    // Serial.print("TS: ");
+    // Serial.println(Time_State);
+    // Serial.print("TN: ");
+    // Serial.println(Time_New);
 
     if(Time_State != Time_New){
-      if(Time_New != 8){
-        if(Time_New < 8){
-          if(Time_New == 1){
-            servoClick(ServoTime);
-            Done++;
-            Time_State = Time_New;
-          }else{
-            servoClick(ServoTime);
-            if(Time_New == TimeCounter){
-              Done++;
-              Time_State = Time_New;
-            }else{
-              TimeCounter++;
-              TimeCounter++;
-            }
-          }
-        }else if(Time_New > 8){
-          TimeSave = timeClient.getEpochTime();
-          Done++;
-          // In this instence, Time_State will NOT update for the next 8 hours. 
-        }
-      }else if(Time_New == 8 && Done == 2){
-        Done++;
-        Time_State = Time_New;
+      keepTime = timeClient.getEpochTime();
+      if(TimeCounter == 10){
+        servoClick(ServoPW);
+        servoClick(ServoPW);
+        // Serial.println("Moved Power by Time");
+        Time_State = 8;
+        TimeCounter = 0;
       }
+      
+      if(Time_New < 8){
+        if(Time_New == 1){
+          servoClick(ServoTime);
+          // Serial.println("Moved Time - 1");
+          Done++;
+          TimeCounter = 10;
+        }else if(Time_New == 2){
+          servoClick(ServoTime);
+          // Serial.println("Moved Time - 2");
+          TimeCounter++;
+          if(TimeCounter == 2){
+            Done++;
+            TimeCounter = 10;
+          }
+        }else if(Time_New == 4){
+          servoClick(ServoTime);
+          // Serial.println("Moved Time - 3");
+          TimeCounter++;
+          if(TimeCounter == 3){
+            Done++;
+            TimeCounter = 10;
+          }
+        }else if(Time_New == 6){
+          servoClick(ServoTime);
+          // Serial.println("Moved Time - 4");
+          TimeCounter++;
+          if(TimeCounter == 4){
+            Done++;
+            TimeCounter = 10;
+          }
+        }
+      }else{
+        TimeSave = timeClient.getEpochTime();
+        Done++;
+        TimeCounter = 10;
+        // In this instence, Time_State will NOT update for the next 8 hours. 
+      }
+      
+    }else if(Done == 2){
+      Done++;
     }
-
-
 
     if(Done == 3){
       updated = false;
       Done = 0;
     }
   }
-  if(Time_New > 8 && (TimeSave + 28800) < timeClient.getEpochTime()){
+  if(Time_New > 8 && (TimeSave + 28800 - 100) < timeClient.getEpochTime()){
     updated = true;
     Time_New = Time_New - 8;
+    Time_State = 14;
   }
 
   if(choose == 0){
@@ -361,6 +393,7 @@ void powerFunction(
     LeftDone = Done;
     LeftTimeCounter = TimeCounter;
     LeftTimeSave = TimeSave;
+    keepTimeLeft = keepTime;
     // Serial.println("Done with LEFT");
   }else{
     RightPower_State = Power_State;
@@ -373,6 +406,7 @@ void powerFunction(
     RightDone = Done;
     RightTimeCounter = TimeCounter;
     RightTimeSave = TimeSave;
+    keepTimeRight = keepTime;
     // Serial.println("Done with RIGHT");
   }
   
@@ -381,9 +415,11 @@ void powerFunction(
 void servoClick(Servo &theservo){
   // Serial.println("SERVO: ");
   // Serial.println();
-  theservo.write(45);
   delay(150);
+  theservo.write(45);
+  delay(300);
   theservo.write(0);
+  delay(200);
 }
 
 /******** Main Function *************/
@@ -398,17 +434,25 @@ void loop() {
     servoLeftPower,servoLeftTemp,servoLeftTime,
     LeftPower_State,LeftTime_State,LeftTemp_State,
     LeftPower_New,LeftTime_New,LeftTemp_New,
-    updatedLeft,LeftDone,LeftTimeCounter,LeftTimeSave, 0
+    updatedLeft,LeftDone,LeftTimeCounter,LeftTimeSave, 0, keepTimeLeft
   );
-  delay(150);
+  delay(50);
 
   powerFunction(
     servoRightPower,servoRightTemp,servoRightTime,
     RightPower_State,RightTime_State,RightTemp_State,
     RightPower_New,RightTime_New,RightTemp_New,
-    updatedRight,RightDone,RightTimeCounter,RightTimeSave, 1
+    updatedRight,RightDone,RightTimeCounter,RightTimeSave, 1, keepTimeRight
   );
-  delay(150);
+  delay(50);
 
-  // delay(50);
+  if(keepTimeLeft + 3600 < timeClient.getEpochTime()){
+    keepTimeLeft = timeClient.getEpochTime();
+    LeftTime_State--;
+  }
+  if(keepTimeRight + 3600 < timeClient.getEpochTime()){
+    keepTimeRight = timeClient.getEpochTime();
+    RightTime_State--;
+  }
+  delay(150);
 }
